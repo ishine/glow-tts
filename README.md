@@ -37,6 +37,11 @@ It is also possible to use a pretrained model, which, if sufficiently large, can
 The research has been supported by the European Regional Development Fund within the research project ”Multilingual Artificial Intelligence Based Human Computer Interaction” No. 1.1.1.1/18/A/148
 <br/>
 <br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
 
 # BELOW FOLLOWS THE ORIGINAL GLOW DESCRIPTION
 
