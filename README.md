@@ -1,5 +1,5 @@
 # MULTI-SPEAKER GLOW
-Tilde's multi speaker extension to [Glow-TTS](https://github.com/jaywalnut310/glow-tts). Currently only supports GPU training, but can perform CPU/GPU waveglow or griffin-lim synthesis.
+Tilde's multi speaker extension to [Glow-TTS](https://github.com/jaywalnut310/glow-tts). Currently only supports GPU training, but can perform CPU/GPU waveglow synthesis.
 
 ## Installation for UNIX
 1. `pip install -r requirements.txt`
