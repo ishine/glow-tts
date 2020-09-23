@@ -19,9 +19,9 @@ class DurationPredictor(nn.Module):
     self.p_dropout = p_dropout
 
     self.drop = nn.Dropout(p_dropout)
-    self.conv_1 = nn.Conv1d(in_channels, filter_channels, kernel_size, padding=kernel_size//2)
+    self.conv_1 = nn.Conv1d(in_channels, filter_channels, kernel_size, padding=kernel_size // 2)
     self.norm_1 = attentions.LayerNorm(filter_channels)
-    self.conv_2 = nn.Conv1d(filter_channels, filter_channels, kernel_size, padding=kernel_size//2)
+    self.conv_2 = nn.Conv1d(filter_channels, filter_channels, kernel_size, padding=kernel_size // 2)
     self.norm_2 = attentions.LayerNorm(filter_channels)
     self.proj = nn.Conv1d(filter_channels, 1, 1)
 
@@ -39,27 +39,29 @@ class DurationPredictor(nn.Module):
 
 
 class TextEncoder(nn.Module):
-  def __init__(self, 
-      n_vocab, 
-      out_channels, 
-      hidden_channels, 
-      filter_channels, 
-      filter_channels_dp, 
-      n_heads, 
-      n_layers, 
-      kernel_size, 
-      p_dropout, 
-      window_size=None,
-      block_length=None,
-      mean_only=False,
-      prenet=False,
-      gin_channels=0):
+  def __init__(self,
+               speaker_dim,
+               n_vocab,
+               out_channels,
+               hidden_channels,
+               filter_channels,
+               filter_channels_dp,
+               n_heads,
+               n_layers,
+               kernel_size,
+               p_dropout,
+               window_size=None,
+               block_length=None,
+               mean_only=False,
+               prenet=False,
+               gin_channels=0):
 
     super().__init__()
 
+    self.speaker_dim = speaker_dim
     self.n_vocab = n_vocab
     self.out_channels = out_channels
-    self.hidden_channels = hidden_channels
+    self.hidden_channels = hidden_channels + speaker_dim
     self.filter_channels = filter_channels
     self.filter_channels_dp = filter_channels_dp
     self.n_heads = n_heads
@@ -72,11 +74,16 @@ class TextEncoder(nn.Module):
     self.prenet = prenet
     self.gin_channels = gin_channels
 
-    self.emb = nn.Embedding(n_vocab, hidden_channels)
-    nn.init.normal_(self.emb.weight, 0.0, hidden_channels**-0.5)
+    # append speaker embedding dimension to hidden size
+    hidden_channels = hidden_channels + speaker_dim
 
+    self.emb = nn.Embedding(n_vocab, hidden_channels - self.speaker_dim)
+    nn.init.normal_(self.emb.weight, 0.0, (hidden_channels - self.speaker_dim) ** -0.5)
+    print("Hidden channels set to local: ", hidden_channels)
     if prenet:
-      self.pre = modules.ConvReluNorm(hidden_channels, hidden_channels, hidden_channels, kernel_size=5, n_layers=3, p_dropout=0.5)
+      self.pre = modules.ConvReluNorm(hidden_channels, hidden_channels,
+                                      hidden_channels, kernel_size=5,
+                                      n_layers=3, p_dropout=0.5)
     self.encoder = attentions.Encoder(
       hidden_channels,
       filter_channels,
@@ -92,14 +99,20 @@ class TextEncoder(nn.Module):
     if not mean_only:
       self.proj_s = nn.Conv1d(hidden_channels, out_channels, 1)
     self.proj_w = DurationPredictor(hidden_channels + gin_channels, filter_channels_dp, kernel_size, p_dropout)
-  
-  def forward(self, x, x_lengths, g=None):
-    x = self.emb(x) * math.sqrt(self.hidden_channels) # [b, t, h]
-    x = torch.transpose(x, 1, -1) # [b, h, t]
+
+  def forward(self, x, x_lengths, speaker_embedding, g=None):
+    x = self.emb(x) * math.sqrt(self.hidden_channels)  # [b, t, h]
+    x = torch.transpose(x, 1, -1)  # [b, h, t]
     x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+
+    # Append speaker embeddings
+    speaker_embedding = speaker_embedding.unsqueeze(2)
+    speaker_embedding = speaker_embedding.repeat(1, 1, x.shape[2])
+    x = torch.cat((x, speaker_embedding), dim=1)
 
     if self.prenet:
       x = self.pre(x, x_mask)
+
     x = self.encoder(x, x_mask)
 
     if g is not None:
@@ -115,22 +128,23 @@ class TextEncoder(nn.Module):
       x_logs = torch.zeros_like(x_m)
 
     logw = self.proj_w(x_dp, x_mask)
+
     return x_m, x_logs, logw, x_mask
 
 
 class FlowSpecDecoder(nn.Module):
-  def __init__(self, 
-      in_channels, 
-      hidden_channels, 
-      kernel_size, 
-      dilation_rate, 
-      n_blocks, 
-      n_layers, 
-      p_dropout=0., 
-      n_split=4,
-      n_sqz=2,
-      sigmoid_scale=False,
-      gin_channels=0):
+  def __init__(self,
+               in_channels,
+               hidden_channels,
+               kernel_size,
+               dilation_rate,
+               n_blocks,
+               n_layers,
+               p_dropout=0.,
+               n_split=4,
+               n_sqz=2,
+               sigmoid_scale=False,
+               gin_channels=0):
     super().__init__()
 
     self.in_channels = in_channels
@@ -153,7 +167,7 @@ class FlowSpecDecoder(nn.Module):
         attentions.CouplingBlock(
           in_channels * n_sqz,
           hidden_channels,
-          kernel_size=kernel_size, 
+          kernel_size=kernel_size,
           dilation_rate=dilation_rate,
           n_layers=n_layers,
           gin_channels=gin_channels,
@@ -186,35 +200,37 @@ class FlowSpecDecoder(nn.Module):
 
 
 class FlowGenerator(nn.Module):
-  def __init__(self, 
-      n_vocab, 
-      hidden_channels, 
-      filter_channels, 
-      filter_channels_dp, 
-      out_channels,
-      kernel_size=3, 
-      n_heads=2, 
-      n_layers_enc=6,
-      p_dropout=0., 
-      n_blocks_dec=12, 
-      kernel_size_dec=5, 
-      dilation_rate=5, 
-      n_block_layers=4,
-      p_dropout_dec=0., 
-      n_speakers=0, 
-      gin_channels=0, 
-      n_split=4,
-      n_sqz=1,
-      sigmoid_scale=False,
-      window_size=None,
-      block_length=None,
-      mean_only=False,
-      hidden_channels_enc=None,
-      hidden_channels_dec=None,
-      prenet=False,
-      **kwargs):
+  def __init__(self,
+               speaker_dim,
+               n_vocab,
+               hidden_channels,
+               filter_channels,
+               filter_channels_dp,
+               out_channels,
+               kernel_size=3,
+               n_heads=2,
+               n_layers_enc=6,
+               p_dropout=0.,
+               n_blocks_dec=12,
+               kernel_size_dec=5,
+               dilation_rate=5,
+               n_block_layers=4,
+               p_dropout_dec=0.,
+               n_speakers=0,
+               gin_channels=0,
+               n_split=4,
+               n_sqz=1,
+               sigmoid_scale=False,
+               window_size=None,
+               block_length=None,
+               mean_only=False,
+               hidden_channels_enc=None,
+               hidden_channels_dec=None,
+               prenet=False,
+               **kwargs):
 
     super().__init__()
+    self.speaker_dim = speaker_dim
     self.n_vocab = n_vocab
     self.hidden_channels = hidden_channels
     self.filter_channels = filter_channels
@@ -242,42 +258,45 @@ class FlowGenerator(nn.Module):
     self.prenet = prenet
 
     self.encoder = TextEncoder(
-        n_vocab, 
-        out_channels, 
-        hidden_channels_enc or hidden_channels, 
-        filter_channels, 
-        filter_channels_dp, 
-        n_heads, 
-        n_layers_enc, 
-        kernel_size, 
-        p_dropout, 
-        window_size=window_size,
-        block_length=block_length,
-        mean_only=mean_only,
-        prenet=prenet,
-        gin_channels=gin_channels)
+      speaker_dim,
+      n_vocab,
+      out_channels,
+      hidden_channels_enc or hidden_channels,
+      filter_channels,
+      filter_channels_dp,
+      n_heads,
+      n_layers_enc,
+      kernel_size,
+      p_dropout,
+      window_size=window_size,
+      block_length=block_length,
+      mean_only=mean_only,
+      prenet=prenet,
+      gin_channels=gin_channels)
 
     self.decoder = FlowSpecDecoder(
-        out_channels, 
-        hidden_channels_dec or hidden_channels, 
-        kernel_size_dec, 
-        dilation_rate, 
-        n_blocks_dec, 
-        n_block_layers, 
-        p_dropout=p_dropout_dec, 
-        n_split=n_split,
-        n_sqz=n_sqz,
-        sigmoid_scale=sigmoid_scale,
-        gin_channels=gin_channels)
+      out_channels,
+      hidden_channels_dec or hidden_channels,
+      kernel_size_dec,
+      dilation_rate,
+      n_blocks_dec,
+      n_block_layers,
+      p_dropout=p_dropout_dec,
+      n_split=n_split,
+      n_sqz=n_sqz,
+      sigmoid_scale=sigmoid_scale,
+      gin_channels=gin_channels)
 
     if n_speakers > 1:
       self.emb_g = nn.Embedding(n_speakers, gin_channels)
       nn.init.uniform_(self.emb_g.weight, -0.1, 0.1)
 
-  def forward(self, x, x_lengths, y=None, y_lengths=None, g=None, gen=False, noise_scale=1., length_scale=1.):
+  def forward(self, x, x_lengths, speaker_embedding, y=None, y_lengths=None, g=None, gen=False, noise_scale=1.,
+              length_scale=1.):
+
     if g is not None:
-      g = F.normalize(self.emb_g(g)).unsqueeze(-1) # [b, h]
-    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, g=g)
+      g = F.normalize(self.emb_g(g)).unsqueeze(-1)  # [b, h]
+    x_m, x_logs, logw, x_mask = self.encoder(x, x_lengths, speaker_embedding, g=g)
 
     if gen:
       w = torch.exp(logw) * x_mask * length_scale
@@ -292,8 +311,10 @@ class FlowGenerator(nn.Module):
 
     if gen:
       attn = commons.generate_path(w_ceil.squeeze(1), attn_mask.squeeze(1)).unsqueeze(1)
-      y_m = torch.matmul(attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
-      y_logs = torch.matmul(attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
+      y_m = torch.matmul(attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)).transpose(1,
+                                                                                         2)  # [b, t', t], [b, t, d] -> [b, d, t']
+      y_logs = torch.matmul(attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)).transpose(1,
+                                                                                               2)  # [b, t', t], [b, t, d] -> [b, d, t']
       logw_ = torch.log(1e-8 + torch.sum(attn, -1)) * x_mask
 
       z = (y_m + torch.exp(y_logs) * torch.randn_like(y_m) * noise_scale) * y_mask
@@ -303,15 +324,22 @@ class FlowGenerator(nn.Module):
       z, logdet = self.decoder(y, y_mask, g=g, reverse=False)
       with torch.no_grad():
         x_s_sq_r = torch.exp(-2 * x_logs)
-        logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - x_logs, [1]).unsqueeze(-1) # [b, t, 1]
-        logp2 = torch.matmul(x_s_sq_r.transpose(1,2), -0.5 * (z ** 2)) # [b, t, d] x [b, d, t'] = [b, t, t']
-        logp3 = torch.matmul((x_m * x_s_sq_r).transpose(1,2), z) # [b, t, d] x [b, d, t'] = [b, t, t']
-        logp4 = torch.sum(-0.5 * (x_m ** 2) * x_s_sq_r, [1]).unsqueeze(-1) # [b, t, 1]
-        logp = logp1 + logp2 + logp3 + logp4 # [b, t, t']
+        logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - x_logs, [1]).unsqueeze(-1)  # [b, t, 1]
+        logp2 = torch.matmul(x_s_sq_r.transpose(1, 2), -0.5 * (z ** 2))  # [b, t, d] x [b, d, t'] = [b, t, t']
+        logp3 = torch.matmul((x_m * x_s_sq_r).transpose(1, 2), z)  # [b, t, d] x [b, d, t'] = [b, t, t']
+        logp4 = torch.sum(-0.5 * (x_m ** 2) * x_s_sq_r, [1]).unsqueeze(-1)  # [b, t, 1]
+        logp = logp1 + logp2 + logp3 + logp4  # [b, t, t']
+
+        # Only used during training, which is done on linux
+        # imports cython function which will not work on windows
+
+        import tts_dev.glow_model.monotonic_align as monotonic_align
 
         attn = monotonic_align.maximum_path(logp, attn_mask.squeeze(1)).unsqueeze(1).detach()
-      y_m = torch.matmul(attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
-      y_logs = torch.matmul(attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)).transpose(1, 2) # [b, t', t], [b, t, d] -> [b, d, t']
+      y_m = torch.matmul(attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)).transpose(1,
+                                                                                         2)  # [b, t', t], [b, t, d] -> [b, d, t']
+      y_logs = torch.matmul(attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)).transpose(1,
+                                                                                               2)  # [b, t', t], [b, t, d] -> [b, d, t']
       logw_ = torch.log(1e-8 + torch.sum(attn, -1)) * x_mask
 
       return (z, y_m, y_logs, logdet), attn, logw, logw_, x_m, x_logs
@@ -319,7 +347,7 @@ class FlowGenerator(nn.Module):
   def preprocess(self, y, y_lengths, y_max_length):
     if y_max_length is not None:
       y_max_length = (y_max_length // self.n_sqz) * self.n_sqz
-      y = y[:,:,:y_max_length]
+      y = y[:, :, :y_max_length]
     y_lengths = (y_lengths // self.n_sqz) * self.n_sqz
     return y, y_lengths, y_max_length
 
