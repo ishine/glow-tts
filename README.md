@@ -4,7 +4,7 @@ Tilde's multi speaker extension to [Glow-TTS](https://github.com/jaywalnut310/gl
 ## Installation for UNIX
 1. `pip install -r requirements.txt`
 2. `pip install cython`
-3. `cd tts-dev/; ./build_glow_cython.sh`
+3. `cd glow-tts/; ./build_glow_cython.sh`
 4. Install Apex
 
 ## Training calls
@@ -31,7 +31,7 @@ This way the prior distribution depends on the speaker identity and speaker embe
 ## Obtaining speaker embeddings
 Speaker embeddings can be extracted using a speaker verification network, which learns to discriminate between speakers. The quality of the embeddings can be measured using
 dimensionality reduction techniques (such as PCA) and observing the resulting clusters. Individual speakers should appear clustered and there should be clear separation between the genders. 
-It is also possible to use a pretrained model, which, if sufficiently large, can come from a different language. To extract from Kaldi xvec network trained on VOXceleb dataset, refer to `extract_xvecs_lda.sh`
+It is also possible to use a pretrained model, which, if sufficiently large, can come from a different language. To extract from Kaldi xvec network trained on VOXceleb dataset, refer to [KALDI recipe](https://github.com/kaldi-asr/kaldi/tree/master/egs/voxceleb/v2).
 
 # ACKNOWLEDGMENTS
 The research has been supported by the European Regional Development Fund within the research project ”Multilingual Artificial Intelligence Based Human Computer Interaction” No. 1.1.1.1/18/A/148
