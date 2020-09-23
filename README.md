@@ -37,6 +37,10 @@ It is also possible to use a pretrained model, which, if sufficiently large, can
 The research has been supported by the European Regional Development Fund within the research project ”Multilingual Artificial Intelligence Based Human Computer Interaction” No. 1.1.1.1/18/A/148
 
 
+
+
+
+
 # BELOW FOLLOWS THE ORIGINAL GLOW DESCRIPTION
 
 # Glow-TTS: A Generative Flow for Text-to-Speech via Monotonic Alignment Search
