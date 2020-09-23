@@ -1,3 +1,50 @@
+# MULTI-SPEAKER GLOW
+Tilde's multi speaker extension to [Glow-TTS](https://github.com/jaywalnut310/glow-tts). Currently only supports GPU training, but can perform CPU/GPU waveglow synthesis.
+
+## Installation for UNIX
+1. `pip install -r requirements.txt`
+2. `pip install cython`
+3. `cd glow-tts/; ./build_glow_cython.sh`
+4. Install Apex
+
+## Training calls
+Similar functionality to GLOW model. Config file has been switched to YAML and modified to include directory of the embedding vectors.
+Embedding vectors <em>MUST</em> have the same name as their audio counterparts (except for the extension). Refer to `configs/config_glow.yaml`.
+
+1. `./train_ddi.sh`
+
+## Synthesis calls
+Currently requires precomputed speaker embeddings for the desired speaker, which must be provided in the input file by means of audio path.
+Supports only WAVEGLOW neural vocoder.
+1. `python synth.py -f path/to/sample.txt -c path/to/checkpoint.pth -hp path/to/config_glow.yaml -o outdir -w path/to/waveglow_ckpt`
+2. (OPTIONAL) add `--cuda` to use GPU
+3. (OPTIONAL) add `--spaces` to append start/end spaces to text (may improve synthesis quality)
+
+
+sample.txt layout
+`path/to/audio.wav|desired text to be synthesized`
+
+## Differences from single speaker GLOW
+Contrary to the suggestions in the original [GLOW paper](https://arxiv.org/pdf/2005.11129.pdf), speaker embeddings are concatenated to the output of the text encoder.
+This way the prior distribution depends on the speaker identity and speaker embeddings have influence on the most probable alignment with the latent representation.
+
+## Obtaining speaker embeddings
+Speaker embeddings can be extracted using a speaker verification network, which learns to discriminate between speakers. The quality of the embeddings can be measured using
+dimensionality reduction techniques (such as PCA) and observing the resulting clusters. Individual speakers should appear clustered and there should be clear separation between the genders. 
+It is also possible to use a pretrained model, which, if sufficiently large, can come from a different language. To extract from Kaldi xvec network trained on VOXceleb dataset, refer to [KALDI recipe](https://github.com/kaldi-asr/kaldi/tree/master/egs/voxceleb/v2).
+
+# ACKNOWLEDGMENTS
+The research has been supported by the European Regional Development Fund within the research project ”Multilingual Artificial Intelligence Based Human Computer Interaction” No. 1.1.1.1/18/A/148
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+
+# BELOW FOLLOWS THE ORIGINAL GLOW DESCRIPTION
+
 # Glow-TTS: A Generative Flow for Text-to-Speech via Monotonic Alignment Search
 
 ### Jaehyeon Kim, Sungwon Kim, Jungil Kong, and Sungroh Yoon
