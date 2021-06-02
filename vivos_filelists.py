@@ -5,7 +5,7 @@ train_file = 'vivos/train/train.txt'
 test_file = 'vivos/test/test.txt'
 root = '../datasets'
 
-def get_speakers_dict(file_path, start=0):
+def get_speakers_dict(file_path):
     speakers = set()
     file_path = os.path.join(root, file_path)
     with io.open(file_path) as f:
@@ -18,20 +18,17 @@ def get_speakers_dict(file_path, start=0):
     speakers = sorted(list(speakers))
     print(len(speakers))
     d = {}
-    i = start
-    for name in speakers:
+    for i, name in enumerate(speakers):
         d[name] = str(i)
-        i += 1
-    return d, i
+    return d
 
 
 def create_filelists(root):
     train_path = os.path.join(root, train_file)
     test_path = os.path.join(root, test_file)
 
-    start = 0
-    train_d, new_start = get_speakers_dict(train_path)
-    test_d, _ = get_speakers_dict(test_path, new_start)
+    train_d = get_speakers_dict(train_path)
+    test_d = get_speakers_dict(test_path)
 
     with io.open(train_path, 'r', encoding='utf-8') as f:
         train_content = [l.split('|') for l in f if len(l) > 1]
