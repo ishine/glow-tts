@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from data_utils import TextMelLoader, TextMelCollate
+from data_utils import TextMelSpeakerLoader, TextMelSpeakerCollate 
 import models
 import commons
 import utils
@@ -31,8 +31,8 @@ def main():
 
   torch.manual_seed(hps.train.seed)
 
-  train_dataset = TextMelLoader(hps.data.training_files, hps.data)
-  collate_fn = TextMelCollate(1)
+  train_dataset = TextMelSpeakerLoader(hps.data.training_files, hps.data)
+  collate_fn = TextMelSpeakerCollate(1)
   train_loader = DataLoader(train_dataset, num_workers=8, shuffle=True,
       batch_size=hps.train.batch_size, pin_memory=True,
       drop_last=True, collate_fn=collate_fn)
