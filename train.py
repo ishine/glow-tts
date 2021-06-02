@@ -155,7 +155,7 @@ def evaluate(rank, epoch, hps, generator, optimizer_g, val_loader, logger, write
       for batch_idx, (x, x_lengths, y, y_lengths, sid) in enumerate(val_loader):
         x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
         y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(rank, non_blocking=True)
-
+        sid = sid.cuda(rank, non_blocking=True)
         
         (z, z_m, z_logs, logdet, z_mask), (x_m, x_logs, x_mask), (attn, logw, logw_) = generator(x, x_lengths, y, y_lengths, g=sid, gen=False)
         l_mle = commons.mle_loss(z, z_m, z_logs, logdet, z_mask)
