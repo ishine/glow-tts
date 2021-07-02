@@ -134,11 +134,7 @@ def train(rank, epoch, hps, generator, optimizer_g, train_loader, logger, writer
         scalar_dict.update({"loss/g/{}".format(i): v for i, v in enumerate(loss_gs)})
         utils.summarize(
           writer=writer,
-          global_step=global_step, 
-          images={"y_org": utils.plot_spectrogram_to_numpy(y[0].data.cpu().numpy()), 
-            "y_gen": utils.plot_spectrogram_to_numpy(y_gen[0].data.cpu().numpy()), 
-            "attn": utils.plot_alignment_to_numpy(attn[0,0].data.cpu().numpy()),
-            },
+          global_step=global_step,
           scalars=scalar_dict)
     global_step += 1
   
